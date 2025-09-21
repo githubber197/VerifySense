@@ -105,6 +105,9 @@ cd verifysense/frontend
 # Install dependencies
 npm install
 
+# Install framer-motion
+npm install framer-motion
+
 # Start the development server
 npm start
 ```
