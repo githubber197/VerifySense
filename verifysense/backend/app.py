@@ -2,20 +2,104 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-
-# Import services
-from services.claim_extraction import extract_claims
-from services.fact_check import check_facts
-from services.evidence_retrieval import get_evidence
-from services.scoring import calculate_score
-from services.explainability import generate_explanation
-from services.ocr import extract_text_from_image
+from base64 import b64decode
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# ------------------------
+# Mock service functions
+# ------------------------
+
+def extract_text_from_image(image_base64):
+    # In reality, you would decode the image and use OCR here
+    # For now, return a sample text
+    return "COVID-19 vaccines contain microchips to track people"
+
+def extract_claims(content):
+    # Mock claim extraction: split content into sentences and pick suspicious ones
+    # Here, just return the full content as one claim
+    if not content.strip():
+        return []
+    return [content.strip()]
+
+def check_facts(claim):
+    # Mock fact checks
+    if "microchip" in claim.lower():
+        return [{
+            "publisher": {"name": "PolitiFact"},
+            "rating": "False",
+            "rating_explanation": "COVID-19 vaccines do not contain microchips or tracking devices",
+            "url": "https://www.politifact.com/factchecks/2021/jan/15/facebook-posts/covid-19-vaccines-dont-contain-microchips-track-pe/"
+        }]
+    else:
+        return [{
+            "publisher": {"name": "Snopes"},
+            "rating": "True",
+            "rating_explanation": "This claim has been verified as accurate",
+            "url": "https://www.snopes.com/fact-check/example-true-claim/"
+        }]
+
+def get_evidence(claim):
+    # Mock evidence retrieval
+    return [
+        {
+            "title": "CDC Article",
+            "snippet": "CDC confirms vaccines do not contain microchips.",
+            "reliability": "high",
+            "source": "CDC",
+            "date": "2021-01-01",
+            "link": "https://www.cdc.gov/vaccines"
+        }
+    ]
+def calculate_score(claim, fact_checks, evidence):
+    base_score = 50
+    # Fact check contribution
+    for check in fact_checks:
+        rating = check.get('rating', '').lower()
+        if 'true' in rating:
+            base_score += 15
+        elif 'false' in rating:
+            base_score -= 25
+    
+    # Evidence contribution
+    for item in evidence:
+        reliability = item.get('reliability', 'medium').lower()
+        if reliability == 'high':
+            base_score += 10
+        elif reliability == 'medium':
+            base_score += 5
+    
+    score = max(0, min(100, base_score))
+    
+    if score >= 70:
+        confidence_label = "Likely True"
+    elif score <= 40:
+        confidence_label = "Likely False"
+    else:
+        confidence_label = "Uncertain"
+    
+    return {"score": score, "confidence_label": confidence_label}
+
+
+def generate_explanation(claim, fact_checks, evidence, score):
+    steps = [
+        "Extracted claims from content",
+        "Checked claims against trusted fact-check sources",
+        "Retrieved supporting evidence from credible websites",
+        "Calculated credibility score based on fact checks and evidence"
+    ]
+    return {
+        "summary": "This claim has been analyzed using AI-powered verification tools.",
+        "steps": steps
+    }
+
+# ------------------------
+# Routes
+# ------------------------
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -24,57 +108,44 @@ def health_check():
 @app.route('/api/verify', methods=['POST'])
 def verify():
     data = request.json
-    
-    # Extract input type and content
-    input_type = data.get('input_type', 'text')  # text, url, image
+    input_type = data.get('input_type', 'text')
     content = data.get('content', '')
-    
-    # Process based on input type
+
+    # Handle image content
     if input_type == 'image' and content:
-        # Extract text from image using OCR
         content = extract_text_from_image(content)
-    
-    # Extract claims from content
+
     claims = extract_claims(content)
-    
     if not claims:
         return jsonify({
             'status': 'error',
             'message': 'No claims could be extracted from the provided content'
         }), 400
-    
-    # For each claim, check facts and gather evidence
+
     results = []
     for claim in claims:
-        # Check against Google Fact Check API
         fact_checks = check_facts(claim)
-        
-        # Retrieve evidence from web search
         evidence = get_evidence(claim)
-        
-        # Calculate credibility score
         score = calculate_score(claim, fact_checks, evidence)
-        
-        # Generate explanation for verification process
         explanation = generate_explanation(claim, fact_checks, evidence, score)
-        
+
         results.append({
-            'claim': claim,
-            'fact_checks': fact_checks,
-            'evidence': evidence,
-            'score': score,
-            'explanation': explanation
+            "claim": claim,
+            "fact_checks": fact_checks,
+            "evidence": evidence,
+            "score": score,
+            "explanation": explanation
         })
-    
+
     return jsonify({
-        'status': 'success',
-        'results': results
+        "status": "success",
+        "results": results
     })
 
 @app.route('/api/feedback', methods=['POST'])
 def submit_feedback():
     data = request.json
-    # TODO: Store feedback in Firestore
+    # TODO: Store feedback in database or Firestore
     return jsonify({'status': 'success', 'message': 'Feedback received'})
 
 if __name__ == '__main__':
